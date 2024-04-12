@@ -38,7 +38,7 @@ parser.add_argument('--lr-classifier', type=float, default=0.01,
                     help='learning rate for new classifier head')
 parser.add_argument('--lr-extractor', type=float, default=0.01,
                     help='learning rate for finetuning feature extractor')
-parser.add_argument('--epochs-max', type=int, default=15,
+parser.add_argument('--epochs-max', type=int, default=25,
                     help='max epochs for training classifier or finetuning')
 parser.add_argument('--weight-decay', type=float, default=0.0,
                     help='weight-decay for training')
@@ -176,14 +176,21 @@ def main():
 
 
     #Gather data
-    trainset = torchvision.datasets.CIFAR100(root='../data', train=True, download=True, transform=train_transform)
-    eval_trainset = torchvision.datasets.CIFAR100(root='../data', train=True, download=True, transform=train_transform)
-    testset = torchvision.datasets.CIFAR100(root='../data', train=False, download=True, transform=gen_transform)
+    #trainset = torchvision.datasets.CIFAR100(root='../data', train=True, download=True, transform=train_transform)
+    #eval_trainset = torchvision.datasets.CIFAR100(root='../data', train=True, download=True, transform=gen_transform)
+    #testset = torchvision.datasets.CIFAR100(root='../data', train=False, download=True, transform=gen_transform)
 
-    nclass=100
-    targs_ds = trainset.targets
+    #nclass=100
+    #targs_ds = trainset.targets
 
-    #Get pre-trained model
+    trainset = torchvision.datasets.STL10(root='../data', split='train', download=True, transform=train_transform)
+    eval_trainset = torchvision.datasets.STL10(root='../data', split='train', download=True, transform=train_transform)
+    testset = torchvision.datasets.STL10(root='../data', split='test', download=True, transform=gen_transform)
+
+    nclass=10
+    targs_ds = trainset.labels
+
+    #Get pretrained model
     weights = models.ResNet18_Weights.DEFAULT
     model_ft = models.resnet18(weights=weights)
     
@@ -205,12 +212,12 @@ def main():
     
     # define a trainloader and testloader
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.train_batch_size, shuffle=True)
-    #eval_trainloader = torch.utils.data.DataLoader(eval_trainset, batch_size=args.eval_batch_size, shuffle=True)
+    eval_trainloader = torch.utils.data.DataLoader(eval_trainset, batch_size=args.eval_batch_size, shuffle=True)
     testloader = torch.utils.data.DataLoader(testset, batch_size=args.eval_batch_size, shuffle=False)
 
     #Create Prototype object and pass object reference to exCPRLoss module
     prototypes = Prototype(nclass, num_ftrs)
-    criterion = exCPRLoss(prototypes)
+    criterion = exCPRLoss(prototypes, verbose=args.verbose)
 
 
     #Prepare training
@@ -242,7 +249,10 @@ def main():
             optimizer.zero_grad()
 
             ftr_vec, outputs = cur_model(inputs)
-            loss = criterion(ftr_vec, outputs, labels)
+            if args.verbose:
+                loss, xent_loss, loss_proto, loss_cov, loss_cs = criterion(ftr_vec, outputs, labels)
+            else:
+                loss = criterion(ftr_vec, outputs, labels)
 
 
             loss = loss / acc_steps
@@ -259,11 +269,15 @@ def main():
             running_loss += loss.item()
 
             if i % 1000 == 0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch, i * len(labels), len(trainloader.dataset),
-                       100. * i / len(trainloader), loss.item()))
+                if not args.verbose:
+                    print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                        epoch, i * len(labels), len(trainloader.dataset),
+                        100. * i / len(trainloader), loss.item()))
+                else:
+                    print('Train Epoch: {} [{}/{} ({:.0f}%)]\t Xent: {:.6f} \t Proto: {:.6f} \t Cov: {:.9f} \t CS: {:.6f}'.format(epoch, i*len(labels), len(trainloader.dataset), 100. * i / len(trainloader), xent_loss, loss_proto, loss_cov, loss_cs)) 
 
         scheduler.step()
+        criterion.prototype_warm = 1
         train_losses.append(running_loss/len(trainloader))
 
         #print(f'Current Learning Rate: {scheduler.get_last_lr()[0]:.6f}')
