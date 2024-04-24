@@ -5,16 +5,27 @@ The exCPR algorithm regularizes deep neural networks during training based on th
 ## Simple Implementation
 
 ```python
-import torch as ch
-from torchvision import transforms
+#Create Prototype object and pass object reference to exCPRLoss module
 
-train_transform = transforms.Compose([...])
+prototypes = Prototype(nclass, num_ftrs)
+criterion = exCPRLoss(prototypes, verbose=args.verbose)
 
-data_path = "robust_CIFAR"
+#training loop
+for epoch in range(1,num_epochs+1):
+      for i, data in enumerate(trainloader, 0):
+            inputs, labels = data
+            inputs = inputs.to(device)
+            labels = labels.to(device)
 
-train_data = ch.cat(ch.load(os.path.join(data_path, f"CIFAR_ims")))
-train_labels = ch.cat(ch.load(os.path.join(data_path, f"CIFAR_lab")))
-train_set = folder.TensorDataset(train_data, train_labels, transform=train_transform) 
+            optimizer.zero_grad()
+            ftr_vec, outputs = cur_model(inputs)
+            loss = criterion(ftr_vec, outputs, labels)
+
+            loss.backward()
+
+            prototypes.step()
+            optimizer.step()                       
+
 ```
 
 ## Citation 
